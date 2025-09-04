@@ -20,11 +20,21 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 sys.path.append(".")
 
 # Import our modules
-from agents import RulesAgent, PositionAgent, MathAgent, JonathanAgent
 from game.poker_engine import SimplifiedPokerEngine
 from visualization.table_view import PokerTableVisualizer
 from setup import KnowledgeBaseSetup
-from autogen import GroupChat, GroupChatManager  # type: ignore
+
+# Try to import agents and autogen - fallback to None if not available
+try:
+    from agents import RulesAgent, PositionAgent, MathAgent, JonathanAgent
+    from autogen import GroupChat, GroupChatManager  # type: ignore
+    AGENTS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ AG2/AutoGen not available: {e}")
+    print("📝 AG2/AutoGen not available - simulator requires real agents")
+    RulesAgent = PositionAgent = MathAgent = JonathanAgent = None
+    GroupChat = GroupChatManager = None
+    AGENTS_AVAILABLE = False
 
 
 class InteractivePokerSimulator:
@@ -37,6 +47,7 @@ class InteractivePokerSimulator:
         self.chat_manager = None
         self.kb = None
         self.session_hands = []
+        self.current_hand_history = []  # Track progression within current hand
 
         # Game settings
         self.starting_stack = 100.0
@@ -68,6 +79,10 @@ class InteractivePokerSimulator:
 
     def setup_agents(self):
         """Initialize AI agents with Ollama"""
+        if not AGENTS_AVAILABLE:
+            print("📝 Agents not available - AG2/AutoGen setup required")
+            return
+            
         print("\n🤖 Setting up AI agents...")
         try:
             # Configure Ollama
@@ -84,16 +99,16 @@ class InteractivePokerSimulator:
                 "timeout": 120,
             }
 
-            # Create agents
-            rules_agent = RulesAgent(llm_config)
-            position_agent = PositionAgent(llm_config)
-            math_agent = MathAgent(llm_config)
-            jonathan_agent = JonathanAgent(llm_config, knowledge_base=self.kb)
+            # Create agents (type ignore needed because of conditional import)
+            rules_agent = RulesAgent(llm_config)  # type: ignore
+            position_agent = PositionAgent(llm_config)  # type: ignore
+            math_agent = MathAgent(llm_config)  # type: ignore
+            jonathan_agent = JonathanAgent(llm_config, knowledge_base=self.kb)  # type: ignore
 
             self.agents = [rules_agent, position_agent, math_agent, jonathan_agent]
 
-            # Create GroupChat
-            group_chat = GroupChat(
+            # Create GroupChat (type ignore needed because of conditional import)
+            group_chat = GroupChat(  # type: ignore
                 agents=self.agents,
                 messages=[],
                 max_round=6,  # Shorter for interactive use
@@ -101,7 +116,7 @@ class InteractivePokerSimulator:
                 allow_repeat_speaker=False,
             )
 
-            self.chat_manager = GroupChatManager(
+            self.chat_manager = GroupChatManager(  # type: ignore
                 groupchat=group_chat, llm_config=llm_config
             )
 
@@ -109,7 +124,11 @@ class InteractivePokerSimulator:
 
         except Exception as e:
             print(f"⚠️ Agent setup failed: {e}")
-            print("💡 Continuing with mock agents - make sure Ollama is running")
+            print("💡 Diagnostic info:")
+            print("   • Check if AG2/AutoGen is installed: pip install ag2")
+            print("   • Check if Ollama is running: curl http://localhost:11434")
+            print("   • Check if llama3.2 model is available: ollama list")
+            print("   • Real agent setup required - simulator will not function without agents")
             self.agents = None
             self.chat_manager = None
 
@@ -173,42 +192,71 @@ class InteractivePokerSimulator:
 
         return cards
 
+    def generate_hand_with_progression(self) -> Dict[str, Any]:
+        """Generate a poker hand with complete street-by-street progression"""
+        # Generate the final state
+        final_state = self.generate_random_hand()
+        
+        # Build progression history
+        self.current_hand_history = []
+        
+        # Preflop
+        preflop_state = {
+            "street": "preflop",
+            "position": final_state["position"],
+            "hole_cards": final_state["hole_cards"],
+            "stack_size": final_state["stack_size"],
+            "pot_size": 3.0,  # Blinds
+            "bet_to_call": 2.0,  # Big blind
+            "opponents": final_state["opponents"],
+            "action": "Preflop: Hero in SB with pocket 9s, faced with limps and a raise"
+        }
+        
+        # If we have a board, build the progression
+        if final_state.get("board"):
+            board_cards = final_state["board"].split()
+            
+            # Flop
+            if len(board_cards) >= 3:
+                flop_state = preflop_state.copy()
+                flop_state.update({
+                    "street": "flop",
+                    "board": " ".join(board_cards[:3]),
+                    "pot_size": final_state["pot_size"] * 0.4,
+                    "bet_to_call": final_state["bet_to_call"] * 0.3,
+                    "action": "Flop: Hit bottom set! Opponent leads out"
+                })
+                self.current_hand_history.append(flop_state)
+            
+            # Turn
+            if len(board_cards) >= 4:
+                turn_state = flop_state.copy() if 'flop_state' in locals() else preflop_state.copy()
+                turn_state.update({
+                    "street": "turn", 
+                    "board": " ".join(board_cards[:4]),
+                    "pot_size": final_state["pot_size"] * 0.7,
+                    "bet_to_call": final_state["bet_to_call"] * 0.6,
+                    "action": "Turn: Board pairs! Now have full house, opponent bets again"
+                })
+                self.current_hand_history.append(turn_state)
+            
+            # River (final state)
+            if len(board_cards) == 5:
+                final_state["action"] = "River: Full house holds, facing final bet"
+        else:
+            preflop_state["action"] = "Preflop decision with pocket pair"
+            
+        self.current_hand_history.append(preflop_state)
+        self.current_hand_history.append(final_state)
+        
+        return final_state
+
     def get_agent_recommendations(
         self, game_state: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """Get recommendations from AI agents"""
+        """Get recommendations from AI agents - requires real agents"""
         if not self.agents:
-            # Mock recommendations
-            return [
-                {
-                    "agent": "RulesAgent",
-                    "specialty": "Rules and Game Mechanics",
-                    "recommendation": "All actions are legal - proceed with strategy",
-                    "confidence": 0.95,
-                    "reasoning": "Standard betting situation, all options available",
-                },
-                {
-                    "agent": "MathAgent",
-                    "specialty": "Mathematics and Probability",
-                    "recommendation": self.get_math_recommendation(game_state),
-                    "confidence": random.uniform(0.7, 0.9),
-                    "reasoning": "Based on pot odds and equity calculations",
-                },
-                {
-                    "agent": "PositionAgent",
-                    "specialty": "Position and Ranges",
-                    "recommendation": self.get_position_recommendation(game_state),
-                    "confidence": random.uniform(0.75, 0.88),
-                    "reasoning": f"Position analysis for {game_state['position']}",
-                },
-                {
-                    "agent": "JonathanAgent",
-                    "specialty": "Jonathan Little Strategy",
-                    "recommendation": "Apply GTO principles with exploitative adjustments",
-                    "confidence": random.uniform(0.8, 0.95),
-                    "reasoning": "Based on similar WPH episode patterns",
-                },
-            ]
+            raise Exception("No agents available. Agent recommendations require AG2/AutoGen setup.")
 
         # Get real agent recommendations
         recommendations = []
@@ -218,7 +266,7 @@ class InteractivePokerSimulator:
                 recommendations.append(rec)
             except Exception as e:
                 print(f"⚠️ Error from {agent.name}: {e}")
-                # Fallback recommendation
+                # Agent error - but still include it in results for transparency
                 recommendations.append(
                     {
                         "agent": agent.name,
@@ -231,139 +279,101 @@ class InteractivePokerSimulator:
 
         return recommendations
 
-    def get_math_recommendation(self, game_state: Dict[str, Any]) -> str:
-        """Simple math-based recommendation"""
-        bet_to_call = game_state.get("bet_to_call", 0)
-        pot_size = game_state.get("pot_size", 10)
-
-        if bet_to_call == 0:
-            return "CHECK or BET for value"
-
-        pot_odds = bet_to_call / (pot_size + bet_to_call)
-        if pot_odds < 0.3:
-            return "CALL - good pot odds"
-        elif pot_odds > 0.5:
-            return "FOLD - poor pot odds"
-        else:
-            return "CALL or RAISE depending on hand strength"
-
-    def get_position_recommendation(self, game_state: Dict[str, Any]) -> str:
-        """Simple position-based recommendation"""
-        position = game_state.get("position", "BTN")
-
-        if position in ["UTG", "MP"]:
-            return "TIGHT play - early position"
-        elif position in ["CO", "BTN"]:
-            return "AGGRESSIVE play - late position advantage"
-        else:  # SB, BB
-            return "DEFEND or FOLD based on hand strength"
 
     def get_group_discussion(self, game_state: Dict[str, Any], question: str) -> str:
-        """Get collaborative agent discussion with consolidated recommendation"""
-        if not self.chat_manager:
-            # Create consolidated mock recommendation
-            pot_odds = (
-                game_state.get("bet_to_call", 0)
-                / (game_state.get("pot_size", 10) + game_state.get("bet_to_call", 0))
-                if game_state.get("bet_to_call", 0) > 0
-                else 0
-            )
-            position = game_state.get("position", "BTN")
+        """Get collaborative agent discussion - requires real agents"""
+        
+        # Check if agents are available
+        if not self.chat_manager or not self.agents:
+            return "❌ Real agent discussions require AG2/AutoGen setup. Use 'agents' command for setup instructions."
+        
+        if len(self.agents) == 0:
+            return "❌ No agents initialized for discussion"
 
-            # Determine primary recommendation based on simple heuristics
-            if pot_odds < 0.25:
-                primary_action = "CALL"
-                confidence = "High"
-            elif pot_odds > 0.5:
-                primary_action = "FOLD"
-                confidence = "High"
+        # Create context for multi-agent discussion
+        context = f"""
+POKER HAND ANALYSIS REQUEST:
+
+Position: {game_state.get('position', 'Unknown')}
+Hole Cards: {game_state.get('hole_cards', 'Unknown')}
+Board: {game_state.get('board', 'Preflop')}
+Street: {game_state.get('street', 'preflop')}
+Pot Size: ${game_state.get('pot_size', 0)}
+Stack Size: ${game_state.get('stack_size', 0)}
+Bet to Call: ${game_state.get('bet_to_call', 0)}
+Opponents: {game_state.get('opponents', 1)}
+
+QUESTION: {question}
+
+Please discuss this poker situation. Each agent should provide your specialized analysis, then work together to reach a consensus recommendation. Keep responses concise but informative for interactive play.
+"""
+
+        try:
+            print("🤖 Initiating MultiAgent Discussion...")
+            
+            # Start group discussion using the GroupChatManager
+            chat_result = self.agents[0].initiate_chat(
+                recipient=self.chat_manager,
+                message=context,
+                max_turns=8,  # Allow for back-and-forth discussion
+                silent=False   # Show the conversation
+            )
+            
+            # Extract the conversation
+            if hasattr(chat_result, 'chat_history') and chat_result.chat_history:
+                conversation = []
+                for msg in chat_result.chat_history:
+                    if hasattr(msg, 'content') and hasattr(msg, 'name'):
+                        conversation.append(f"**{msg.name}**: {msg.content}")
+                    elif isinstance(msg, dict):
+                        agent_name = msg.get('name', msg.get('role', 'Agent'))
+                        content = msg.get('content', str(msg))
+                        conversation.append(f"**{agent_name}**: {content}")
+                
+                if conversation:
+                    result = "💬 MULTI-AGENT DISCUSSION:\n"
+                    result += "=" * 60 + "\n"
+                    result += "\n".join(conversation)
+                    result += "\n" + "=" * 60
+                    return result
+            
+            # Fallback if chat_history format is different
+            if chat_result:
+                return f"💬 AGENT DISCUSSION RESULT:\n{str(chat_result)}"
             else:
-                primary_action = "RAISE" if position in ["BTN", "CO"] else "CALL"
-                confidence = "Medium"
-
-            return f"""🎯 CONSOLIDATED RECOMMENDATION: {primary_action} ({confidence} Confidence)
-
-📋 AGENT ANALYSIS SUMMARY:
-• RulesAgent: All actions legal - focus on optimal EV play
-• MathAgent: Pot odds {pot_odds:.1%} suggest {"profitable" if pot_odds < 0.33 else "marginal" if pot_odds < 0.5 else "unprofitable"} continuation
-• PositionAgent: {position} position {"favors aggression" if position in ["BTN", "CO"] else "requires caution"}
-• JonathanAgent: WPH patterns support {"value-focused" if primary_action == "RAISE" else "disciplined"} approach
-
-💡 REASONING: {"Strong pot odds and position support aggressive play" if primary_action == "RAISE" else "Pot odds justify call with drawing potential" if primary_action == "CALL" else "Poor pot odds warrant disciplined fold"}"""
-
-        # Get individual agent recommendations first
-        recommendations = []
-        if self.agents:
-            for agent in self.agents:
-                try:
-                    rec = agent.get_recommendation(game_state)
-                    recommendations.append(
-                        {
-                            "agent": rec.get("agent", agent.name),
-                            "action": rec.get("recommendation", "No recommendation"),
-                            "reasoning": rec.get("reasoning", "No reasoning provided")[
-                                :100
-                            ]
-                            + "..."
-                            if len(rec.get("reasoning", "")) > 100
-                            else rec.get("reasoning", "No reasoning provided"),
-                        }
-                    )
-                except Exception as e:
-                    recommendations.append(
-                        {
-                            "agent": agent.name,
-                            "action": "Analysis failed",
-                            "reasoning": f"Error: {str(e)[:50]}...",
-                        }
-                    )
-
-        # Consolidate recommendations into single suggestion
-        action_votes = {}
-        for rec in recommendations:
-            action = rec["action"].upper()
-            # Extract primary action (CALL, FOLD, RAISE, BET, CHECK)
-            primary_action = "CALL"
-            for keyword in ["FOLD", "RAISE", "BET", "CHECK", "CALL"]:
-                if keyword in action:
-                    primary_action = keyword
-                    break
-            action_votes[primary_action] = action_votes.get(primary_action, 0) + 1
-
-        # Determine consensus recommendation
-        if action_votes:
-            consensus_action = max(action_votes.keys(), key=lambda x: action_votes[x])
-            vote_count = action_votes[consensus_action]
-            confidence = (
-                "High" if vote_count >= 3 else "Medium" if vote_count >= 2 else "Low"
-            )
-        else:
-            consensus_action = "FOLD"
-            confidence = "Low"
-            vote_count = 0
-
-        # Format consolidated response
-        result = f"🎯 CONSOLIDATED RECOMMENDATION: {consensus_action} ({confidence} Confidence)\n\n"
-        result += "📋 AGENT ANALYSIS SUMMARY:\n"
-
-        for rec in recommendations:
-            result += f"• {rec['agent']}: {rec['reasoning']}\n"
-
-        # Add consensus reasoning
-        result += f"\n💡 CONSENSUS REASONING: {vote_count} agents recommend {consensus_action.lower()}ing based on combined analysis of position, pot odds, and strategic considerations."
-
-        return result
+                raise Exception("No discussion result returned")
+                
+        except Exception as e:
+            return f"❌ MultiAgent discussion failed: {e}\nPlease check AG2/Ollama setup using 'agents' command."
 
     def display_hand(
         self, game_state: Dict[str, Any], recommendations: List[Dict[str, Any]]
     ):
-        """Display the poker hand with visualization"""
+        """Display the poker hand with visualization and progression history"""
         print("\n" + "=" * 60)
         print(f"📊 HAND #{self.hands_played + 1}")
         print("=" * 60)
 
-        # Game state info
-        print(f"Street: {game_state.get('street', 'preflop').upper()}")
+        # Show hand progression history if available
+        if self.current_hand_history:
+            print("📚 HAND PROGRESSION HISTORY:")
+            print("-" * 40)
+            for i, historical_state in enumerate(self.current_hand_history):
+                street = historical_state.get('street', 'unknown').upper()
+                action = historical_state.get('action', 'No action recorded')
+                pot = historical_state.get('pot_size', 0)
+                bet = historical_state.get('bet_to_call', 0)
+                board = historical_state.get('board', '')
+                
+                print(f"{i+1}. {street}: {action}")
+                if board:
+                    print(f"   Board: {board}")
+                print(f"   Pot: ${pot:.2f}, Bet to Call: ${bet:.2f}")
+                print()
+            print("-" * 40)
+
+        # Current game state info
+        print(f"CURRENT STREET: {game_state.get('street', 'preflop').upper()}")
         print(f"Position: {game_state['position']}")
         print(f"Hole Cards: {game_state['hole_cards']}")
         if game_state.get("board"):
@@ -615,6 +625,34 @@ class InteractivePokerSimulator:
         ]
         return random.choice(hands)
 
+    def check_agent_status(self) -> str:
+        """Check the status of agents and provide diagnostic information"""
+        status = "🔍 AGENT STATUS DIAGNOSTIC:\n"
+        status += "=" * 50 + "\n"
+        
+        if self.agents and self.chat_manager:
+            status += f"✅ Agents: {len(self.agents)} agents active\n"
+            status += "✅ ChatManager: GroupChatManager initialized\n"
+            status += "✅ MultiAgent Discussion: Available\n"
+            for i, agent in enumerate(self.agents):
+                status += f"   {i+1}. {agent.name} - Ready\n"
+        elif self.agents and not self.chat_manager:
+            status += f"⚠️ Agents: {len(self.agents)} agents created\n"
+            status += "❌ ChatManager: Failed to initialize\n"
+            status += "❌ MultiAgent Discussion: Not available\n"
+        else:
+            status += "❌ Agents: Not initialized - AG2/AutoGen required\n"
+            status += "❌ ChatManager: Not available\n"
+            status += "❌ MultiAgent Discussion: Not available\n"
+            
+        status += "\n📋 Requirements for real agents:\n"
+        status += "   • AG2/AutoGen installed: pip install ag2\n"
+        status += "   • Ollama running on localhost:11434\n"
+        status += "   • llama3.2:latest model downloaded\n"
+        status += "   • Knowledge base initialized (optional)\n"
+        
+        return status
+
     def show_session_stats(self):
         """Display session statistics"""
         if not self.session_hands:
@@ -658,6 +696,7 @@ class InteractivePokerSimulator:
         print("  'fold', 'call', 'check', 'bet X', 'raise X' - Make action")
         print("  'discuss QUESTION' - Ask agents to discuss strategy")
         print("  'stats' - Show session statistics")
+        print("  'agents' - Check agent status and diagnostics")
         print("  'reset' - Reset stack and start over")
         print("  'quit' or 'q' - Exit simulator")
         print("=" * 60)
@@ -675,19 +714,27 @@ class InteractivePokerSimulator:
                     break
 
                 elif command in ["new", "n", "deal"]:
-                    current_game_state = self.generate_random_hand()
-                    current_recommendations = self.get_agent_recommendations(
-                        current_game_state
-                    )
-                    self.display_hand(current_game_state, current_recommendations)
+                    current_game_state = self.generate_hand_with_progression()
+                    try:
+                        current_recommendations = self.get_agent_recommendations(
+                            current_game_state
+                        )
+                        self.display_hand(current_game_state, current_recommendations)
+                    except Exception as e:
+                        print(f"❌ Cannot deal new hand: {e}")
+                        print("💡 Setup AG2/AutoGen to enable gameplay. Use 'agents' command for instructions.")
 
                 elif command == "stats":
                     self.show_session_stats()
+
+                elif command == "agents":
+                    print(self.check_agent_status())
 
                 elif command == "reset":
                     self.current_stack = self.starting_stack
                     self.hands_played = 0
                     self.session_hands = []
+                    self.current_hand_history = []  # Clear hand progression
                     print("🔄 Session reset! Stack back to $100")
 
                 elif command.startswith("discuss "):
@@ -730,8 +777,9 @@ class InteractivePokerSimulator:
                     print("🎯 Available commands:")
                     print("  new/n - Deal new hand")
                     print("  fold/call/check/bet X/raise X - Make action")
-                    print("  discuss QUESTION - Agent discussion")
+                    print("  discuss QUESTION - MultiAgent discussion")
                     print("  stats - Session statistics")
+                    print("  agents - Agent status and diagnostics")
                     print("  reset - Reset session")
                     print("  quit/q - Exit")
 
