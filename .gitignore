@@ -77,6 +77,7 @@ temp/
 ehthumbs.db
 Thumbs.db
 
-# Matplotlib generated images (except test images)
+# Matplotlib generated images (except test images and visualization screenshots)
 *.png
 !test_*.png
+!visualization/screenshots/*.png
