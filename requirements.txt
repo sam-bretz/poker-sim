@@ -1,36 +1,20 @@
-# AG2 Poker Assistant Dependencies
+# Core AG2/AutoGen framework
+ag2==0.9.9
+autogen==0.9.9
 
-# Core framework
-ag2>=0.4.0
-autogen-agentchat>=0.4.0
+# AI and ML libraries
+sentence_transformers==5.1.0
 
-# Poker game engine
-pokerkit>=0.2.0
+# Vector database for RAG
+chromadb==1.0.20
+
+# Web scraping for WPH episodes
+beautifulsoup4==4.13.5
+requests==2.32.5
 
 # Visualization
-matplotlib>=3.7.0
-seaborn>=0.12.0
-PIL>=10.0.0
+matplotlib==3.10.6
+numpy==2.3.2
 
-# Knowledge base and RAG
-chromadb>=0.4.0
-sentence-transformers>=2.2.0
-
-# Web scraping
-beautifulsoup4>=4.12.0
-requests>=2.31.0
-lxml>=4.9.0
-
-# Data processing
-pandas>=2.0.0
-numpy>=1.24.0
-
-# Environment management
-python-dotenv>=1.0.0
-
-# Jupyter integration
-ipywidgets>=8.0.0
-IPython>=8.0.0
-
-# Optional: For card images
-pygame>=2.5.0
+# Poker engine (optional - mainly for advanced hand evaluation)
+pokerkit==0.6.3

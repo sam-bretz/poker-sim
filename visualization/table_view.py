@@ -280,15 +280,8 @@ class PokerTableVisualizer:
                                ['??', '??'], total_players)
                 opponent_count += 1
         
-        # Draw available actions
-        bet_to_call = game_state.get('bet_to_call', 0)
-        actions = ['FOLD']
-        if bet_to_call > 0:
-            actions.extend(['CALL', 'RAISE'])
-        else:
-            actions.extend(['CHECK', 'BET'])
-        
-        self.draw_action_buttons(ax, actions)
+        # Action buttons removed - they were occluding player cards
+        # The available actions are shown in the text interface instead
         
         # Add agent recommendations panel if provided
         if agent_recommendations:

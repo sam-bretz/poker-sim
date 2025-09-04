@@ -70,8 +70,10 @@ class PokerKnowledgeBase:
             }
             metadatas.append(metadata)
             
-            # Create ID
-            ids.append(f"hand_{hand.episode_number}")
+            # Create unique ID using episode number and title hash to avoid duplicates
+            title_hash = hash(hand.title) % 1000  # Simple hash to differentiate same episode numbers
+            unique_id = f"hand_{hand.episode_number}_{title_hash}"
+            ids.append(unique_id)
         
         # Add to collection
         self.hands_collection.add(
@@ -101,7 +103,8 @@ class PokerKnowledgeBase:
                         "type": "key_learning",
                         "context": hand.situation[:100]  # Brief context
                     })
-                    ids.append(f"learning_{hand.episode_number}_{i}")
+                    title_hash = hash(hand.title) % 1000
+                    ids.append(f"learning_{hand.episode_number}_{title_hash}_{i}")
             
             # Index strategic analysis
             if hand.strategic_analysis and len(hand.strategic_analysis.strip()) > 50:
@@ -113,7 +116,8 @@ class PokerKnowledgeBase:
                     "position": hand.position_info,
                     "stacks": hand.stack_sizes
                 })
-                ids.append(f"analysis_{hand.episode_number}")
+                title_hash = hash(hand.title) % 1000
+                ids.append(f"analysis_{hand.episode_number}_{title_hash}")
         
         # Add to strategies collection
         if documents:
@@ -261,31 +265,80 @@ class PokerKnowledgeBase:
             logger.error(f"Error loading from file {json_file}: {e}")
             return []
     
-    def setup_knowledge_base(self, start_episode: int = 1, end_episode: int = 100, 
+    def setup_knowledge_base(self, start_episode: int = 1, end_episode: int = 10, 
                            force_refresh: bool = False):
-        """Complete setup of the knowledge base"""
+        """Complete setup of the knowledge base - scrapes real WPH episodes"""
         
-        json_file = f"wph_episodes_{start_episode}_{end_episode}.json"
+        # Check multiple possible data file locations
+        # Prioritize files with episode range in name for clarity
+        possible_files = [
+            f"data/wph_episodes_{start_episode}_{end_episode}.json",  # Primary naming convention
+            f"wph_episodes_{start_episode}_{end_episode}.json",  # Root directory fallback
+        ]
         
-        # Check if we already have the data
-        if os.path.exists(json_file) and not force_refresh:
-            logger.info(f"Loading existing data from {json_file}")
-            return self.load_and_index_from_file(json_file)
+        # Also check for any existing quality data files in data directory
+        if os.path.exists("data"):
+            # Look for files with episode ranges (e.g., wph_episodes_550_560.json)
+            for file in os.listdir("data"):
+                if file.startswith("wph_episodes_") and file.endswith(".json"):
+                    # Skip backup files
+                    if 'backup' not in file and 'summary' not in file:
+                        possible_files.append(f"data/{file}")
         
-        # Scrape fresh data
-        logger.info(f"Scraping episodes {start_episode} to {end_episode}...")
-        scraper = WPHScraper()
-        hands = scraper.scrape_episodes(start_episode, end_episode)
+        # Try to load existing data if not forcing refresh
+        if not force_refresh:
+            for json_file in possible_files:
+                if os.path.exists(json_file):
+                    logger.info(f"📁 Found existing data file: {json_file}")
+                    try:
+                        hands = self.load_and_index_from_file(json_file)
+                        if hands:
+                            logger.info(f"✅ Successfully loaded {len(hands)} hands from existing data")
+                            logger.info(f"💾 Skipping scraping - using cached data from {json_file}")
+                            return hands
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to load {json_file}, trying next file: {e}")
+                        continue
+            
+            logger.info("📭 No usable existing data files found")
+        else:
+            logger.info("🔄 Force refresh requested - will scrape fresh data")
         
-        # Save scraped data
-        scraper.save_to_json(hands, json_file)
+        # Scrape fresh data - this is required, no fallback
+        logger.info(f"🕷️ Scraping episodes {start_episode} to {end_episode}...")
+        logger.info("⏱️ This may take a few minutes depending on the number of episodes...")
         
-        # Index the data
-        if hands:
+        try:
+            scraper = WPHScraper()
+            hands = scraper.scrape_episodes(start_episode, end_episode)
+            
+            if not hands:
+                raise Exception("No hands were successfully scraped. Check internet connection and site accessibility.")
+            
+            # Save scraped data (returns git-friendly paths)
+            main_json_file = f"wph_episodes_{start_episode}_{end_episode}.json"
+            git_file, summary_file = scraper.save_to_json(hands, main_json_file)
+            
+            # Index the data
             self.index_poker_hands(hands)
             self.index_strategies(hands)
-        
-        return hands
+            
+            logger.info(f"Successfully set up knowledge base with {len(hands)} hands")
+            logger.info(f"Data saved for git commit: {git_file}")
+            logger.info(f"Summary available: {summary_file}")
+            
+            return hands
+            
+        except Exception as e:
+            logger.error(f"Failed to scrape episodes: {e}")
+            logger.error("Knowledge base setup requires successful scraping of WPH episodes.")
+            raise Exception(f"Knowledge base setup failed: {e}")
+    
+    def quick_setup(self):
+        """Quick setup with quality episodes that have actual strategy content"""
+        # Use newer episodes (550+) which have real strategic content
+        # Older episodes (1-100) often just have audio/video links
+        return self.setup_knowledge_base(start_episode=550, end_episode=560)
     
     def get_collection_stats(self) -> Dict[str, Any]:
         """Get statistics about the knowledge base"""
@@ -300,6 +353,47 @@ class PokerKnowledgeBase:
             }
         except:
             return {"error": "Could not retrieve stats"}
+    
+    def get_available_data_files(self) -> Dict[str, Any]:
+        """Check what data files are available on disk"""
+        available_files = []
+        
+        # Check root directory
+        for pattern in ["wph_episodes_*.json"]:
+            import glob
+            for file in glob.glob(pattern):
+                try:
+                    stat = os.stat(file)
+                    available_files.append({
+                        "file": file,
+                        "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                        "modified": stat.st_mtime,
+                        "location": "root"
+                    })
+                except:
+                    pass
+        
+        # Check data directory
+        if os.path.exists("data"):
+            for file in os.listdir("data"):
+                if file.startswith("wph_") and file.endswith(".json"):
+                    filepath = f"data/{file}"
+                    try:
+                        stat = os.stat(filepath)
+                        available_files.append({
+                            "file": filepath,
+                            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                            "modified": stat.st_mtime,
+                            "location": "data"
+                        })
+                    except:
+                        pass
+        
+        return {
+            "total_files": len(available_files),
+            "files": available_files,
+            "has_data": len(available_files) > 0
+        }
 
 if __name__ == "__main__":
     # Test the knowledge base
