@@ -11,11 +11,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class Street(Enum):
     PREFLOP = "preflop"
     FLOP = "flop"
     TURN = "turn"
     RIVER = "river"
+
 
 class Action(Enum):
     FOLD = "fold"
@@ -25,9 +27,11 @@ class Action(Enum):
     RAISE = "raise"
     ALL_IN = "all_in"
 
+
 @dataclass
 class Card:
     """Represents a playing card"""
+
     rank: str  # '2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'
     suit: str  # 'h', 'd', 'c', 's'
 
@@ -41,9 +45,11 @@ class Card:
             raise ValueError(f"Invalid card string: {card_str}")
         return cls(card_str[0], card_str[1])
 
+
 @dataclass
 class Player:
     """Represents a poker player"""
+
     name: str
     position: str
     stack: float
@@ -54,6 +60,7 @@ class Player:
         cards_str = " ".join(str(card) for card in self.hole_cards)
         return f"{self.name} ({self.position}): {cards_str} - ${self.stack}"
 
+
 class SimplifiedPokerEngine:
     """Simplified poker engine for single-hand analysis"""
 
@@ -61,11 +68,11 @@ class SimplifiedPokerEngine:
         self.reset_game()
 
         # Standard deck
-        self.ranks = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
-        self.suits = ['h', 'd', 'c', 's']
+        self.ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"]
+        self.suits = ["h", "d", "c", "s"]
 
         # Positions for 6-max table
-        self.positions_6max = ['UTG', 'MP', 'CO', 'BTN', 'SB', 'BB']
+        self.positions_6max = ["UTG", "MP", "CO", "BTN", "SB", "BB"]
 
     def reset_game(self):
         """Reset the game state"""
@@ -90,8 +97,13 @@ class SimplifiedPokerEngine:
                 cards.append(deck.pop())
         return cards
 
-    def setup_hand(self, hero_position: str = "BTN", hero_cards: str = "random",
-                   num_opponents: int = 2, stack_size: float = 100.0) -> Dict[str, Any]:
+    def setup_hand(
+        self,
+        hero_position: str = "BTN",
+        hero_cards: str = "random",
+        num_opponents: int = 2,
+        stack_size: float = 100.0,
+    ) -> Dict[str, Any]:
         """Setup a new poker hand"""
         self.reset_game()
 
@@ -112,7 +124,7 @@ class SimplifiedPokerEngine:
 
         # Create players
         for i, position in enumerate(positions):
-            is_hero = (position == hero_position.upper())
+            is_hero = position == hero_position.upper()
             player_name = "Hero" if is_hero else f"Opponent{i}"
 
             # Deal hole cards
@@ -124,13 +136,17 @@ class SimplifiedPokerEngine:
                         card2 = Card.from_string(hero_cards[2:])
                         hole_cards = [card1, card2]
                         # Remove these cards from deck
-                        deck = [card for card in deck if not (
-                            (card.rank == card1.rank and card.suit == card1.suit) or
-                            (card.rank == card2.rank and card.suit == card2.suit)
-                        )]
+                        deck = [
+                            card
+                            for card in deck
+                            if not (
+                                (card.rank == card1.rank and card.suit == card1.suit)
+                                or (card.rank == card2.rank and card.suit == card2.suit)
+                            )
+                        ]
                     else:
                         hole_cards = self.deal_cards(deck, 2)
-                except:
+                except (ValueError, IndexError, AttributeError):
                     hole_cards = self.deal_cards(deck, 2)  # Fallback to random
             else:
                 hole_cards = self.deal_cards(deck, 2)
@@ -140,7 +156,7 @@ class SimplifiedPokerEngine:
                 position=position,
                 stack=stack_size,
                 hole_cards=hole_cards,
-                is_hero=is_hero
+                is_hero=is_hero,
             )
             self.players.append(player)
 
@@ -155,9 +171,9 @@ class SimplifiedPokerEngine:
         bb_player = None
 
         for player in self.players:
-            if player.position == 'SB':
+            if player.position == "SB":
                 sb_player = player
-            elif player.position == 'BB':
+            elif player.position == "BB":
                 bb_player = player
 
         if sb_player:
@@ -180,7 +196,9 @@ class SimplifiedPokerEngine:
         # Remove known cards
         for player in self.players:
             for card in player.hole_cards:
-                deck = [c for c in deck if not (c.rank == card.rank and c.suit == card.suit)]
+                deck = [
+                    c for c in deck if not (c.rank == card.rank and c.suit == card.suit)
+                ]
 
         random.shuffle(deck)
         self.board = self.deal_cards(deck, 3)
@@ -196,9 +214,13 @@ class SimplifiedPokerEngine:
         # Remove known cards
         for player in self.players:
             for card in player.hole_cards:
-                deck = [c for c in deck if not (c.rank == card.rank and c.suit == card.suit)]
+                deck = [
+                    c for c in deck if not (c.rank == card.rank and c.suit == card.suit)
+                ]
         for card in self.board:
-            deck = [c for c in deck if not (c.rank == card.rank and c.suit == card.suit)]
+            deck = [
+                c for c in deck if not (c.rank == card.rank and c.suit == card.suit)
+            ]
 
         random.shuffle(deck)
         new_card = self.deal_cards(deck, 1)
@@ -216,9 +238,13 @@ class SimplifiedPokerEngine:
         # Remove known cards
         for player in self.players:
             for card in player.hole_cards:
-                deck = [c for c in deck if not (c.rank == card.rank and c.suit == card.suit)]
+                deck = [
+                    c for c in deck if not (c.rank == card.rank and c.suit == card.suit)
+                ]
         for card in self.board:
-            deck = [c for c in deck if not (c.rank == card.rank and c.suit == card.suit)]
+            deck = [
+                c for c in deck if not (c.rank == card.rank and c.suit == card.suit)
+            ]
 
         random.shuffle(deck)
         new_card = self.deal_cards(deck, 1)
@@ -248,7 +274,9 @@ class SimplifiedPokerEngine:
         board_str = " ".join(str(card) for card in self.board) if self.board else ""
 
         # Calculate bet to call
-        bet_to_call = max(0, self.current_bet - 0)  # Simplified - assumes no previous action
+        bet_to_call = max(
+            0, self.current_bet - 0
+        )  # Simplified - assumes no previous action
 
         # Count opponents
         opponents = len([p for p in self.players if not p.is_hero])
@@ -264,7 +292,7 @@ class SimplifiedPokerEngine:
             "current_bet": self.current_bet,
             "opponents": opponents,
             "action_history": " | ".join(self.action_history[-3:]),  # Last 3 actions
-            "players": [str(player) for player in self.players]
+            "players": [str(player) for player in self.players],
         }
 
     def create_scenario(self, scenario_name: str) -> Dict[str, Any]:
@@ -275,29 +303,26 @@ class SimplifiedPokerEngine:
                 "hero_position": "BTN",
                 "hero_cards": "AhAs",
                 "num_opponents": 2,
-                "description": "Premium pocket aces on the button"
+                "description": "Premium pocket aces on the button",
             },
-
             "tough_decision": {
                 "hero_position": "BB",
                 "hero_cards": "AhQd",
                 "num_opponents": 3,
-                "description": "AQ in big blind facing action"
+                "description": "AQ in big blind facing action",
             },
-
             "bluff_spot": {
                 "hero_position": "CO",
                 "hero_cards": "7h8h",
                 "num_opponents": 2,
-                "description": "Suited connector in late position"
+                "description": "Suited connector in late position",
             },
-
             "pocket_pair": {
                 "hero_position": "MP",
                 "hero_cards": "9h9d",
                 "num_opponents": 4,
-                "description": "Mid pocket pair in middle position"
-            }
+                "description": "Mid pocket pair in middle position",
+            },
         }
 
         if scenario_name not in scenarios:
@@ -307,7 +332,7 @@ class SimplifiedPokerEngine:
         game_state = self.setup_hand(
             hero_position=scenario["hero_position"],
             hero_cards=scenario["hero_cards"],
-            num_opponents=scenario["num_opponents"]
+            num_opponents=scenario["num_opponents"],
         )
 
         game_state["scenario"] = scenario_name
@@ -326,6 +351,7 @@ class SimplifiedPokerEngine:
 
         return self.get_game_state()
 
+
 if __name__ == "__main__":
     # Test the poker engine
     engine = SimplifiedPokerEngine()
@@ -339,7 +365,7 @@ if __name__ == "__main__":
     print(f"Pot Size: ${state['pot_size']}")
     print(f"Stack Size: ${state['stack_size']}")
     print("\nPlayers:")
-    for player in state['players']:
+    for player in state["players"]:
         print(f"  {player}")
 
     # Test dealing flop

@@ -1,0 +1,99 @@
+version: '3'
+
+vars:
+  PYTHON: python3
+  VENV_DIR: ./venv
+  DATA_DIR: ./data
+  CHROMA_DIR: ./chroma_db
+  CACHE_DIR: ./__pycache__
+
+tasks:
+  install:
+    desc: Install project dependencies
+    cmds:
+      - "{{.PYTHON}} -m pip install -r requirements.txt"
+
+  setup:
+    desc: Set up the poker assistant environment
+    deps: [install]
+    cmds:
+      - echo "🎯 Setting up AG2 Poker Assistant..."
+      - echo "📋 Make sure Ollama is running - ollama serve"
+      - echo "📥 Pull required model - ollama pull llama3.2"
+      - echo "✅ Run the simulator - task run"
+
+  run:
+    desc: Run the interactive poker simulator
+    cmds:
+      - "{{.PYTHON}} interactive_poker_simulator.py"
+
+  test-kb:
+    desc: Test knowledge base setup
+    cmds:
+      - "{{.PYTHON}} setup/knowledge_base_setup.py"
+
+  clean:
+    desc: Clean up all artifacts produced during usage
+    cmds:
+      - echo "🧹 Cleaning up poker assistant artifacts..."
+      - echo "📂 Removing Python cache files..."
+      - find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+      - find . -name "*.pyc" -delete 2>/dev/null || true
+      - find . -name "*.pyo" -delete 2>/dev/null || true
+      - echo "🗄️ Removing ChromaDB database..."
+      - rm -rf {{.CHROMA_DIR}} 2>/dev/null || true
+      - echo "📁 Removing scraped data files..."
+      - rm -rf {{.DATA_DIR}} 2>/dev/null || true
+      - echo "📊 Removing matplotlib figure cache..."
+      - find . -name "*.png" -path "./test_*" -delete 2>/dev/null || true
+      - rm -rf ~/.matplotlib 2>/dev/null || true
+      - echo "🔄 Removing session files..."
+      - rm -f *.log 2>/dev/null || true
+      - rm -f session_*.json 2>/dev/null || true
+      - echo "✅ Cleanup complete!"
+
+  clean-deep:
+    desc: Deep clean including virtual environment
+    deps: [clean]
+    cmds:
+      - echo "🧨 Deep cleaning - removing virtual environment..."
+      - rm -rf {{.VENV_DIR}} 2>/dev/null || true
+      - echo "✅ Deep cleanup complete!"
+
+  reset:
+    desc: Reset the project to a fresh state
+    deps: [clean]
+    cmds:
+      - echo "🔄 Resetting poker assistant to fresh state..."
+      - echo "📋 Run 'task setup' to reinitialize"
+
+  status:
+    desc: Check system status and requirements
+    cmds:
+      - echo "🎯 AG2 Poker Assistant Status Check"
+      - echo "=================================="
+      - echo "🐍 Python version"
+      - "{{.PYTHON}} --version || echo '❌ Python not found'"
+      - echo ""
+      - echo "📦 Ollama status"
+      - ollama --version 2>/dev/null || echo "❌ Ollama not installed"
+      - echo ""
+      - echo "🤖 Available models"
+      - ollama list 2>/dev/null || echo "❌ Ollama not running (run ollama serve)"
+      - echo ""
+      - echo "📊 Project artifacts"
+      - echo "   ChromaDB - $([ -d '{{.CHROMA_DIR}}' ] && echo '✅ exists' || echo '❌ not found')"
+      - echo "   Data files - $([ -d '{{.DATA_DIR}}' ] && echo '✅ exists' || echo '❌ not found')"
+      - echo "   Cache files - $(find . -name '__pycache__' -type d | wc -l | xargs echo) directories"
+
+  lint:
+    desc: Run code linting and formatting
+    cmds:
+      - echo "🔍 Linting Python code..."
+      - "{{.PYTHON}} -m ruff check . --fix || true"
+      - "{{.PYTHON}} -m black . --check || true"
+
+  help:
+    desc: Show available tasks
+    cmds:
+      - task --list-all

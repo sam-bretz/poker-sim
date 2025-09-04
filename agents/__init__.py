@@ -9,9 +9,9 @@ from .math_agent import MathAgent
 from .jonathan_agent import JonathanAgent
 
 __all__ = [
-    'BasePokerAgent',
-    'RulesAgent', 
-    'PositionAgent',
-    'MathAgent',
-    'JonathanAgent'
+    "BasePokerAgent",
+    "RulesAgent",
+    "PositionAgent",
+    "MathAgent",
+    "JonathanAgent",
 ]

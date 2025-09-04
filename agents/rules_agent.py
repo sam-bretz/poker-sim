@@ -5,9 +5,10 @@ Rules and Mechanics Agent - Expert in No Limit Texas Hold'em rules and game mech
 from typing import Dict, Any
 from .base_agent import BasePokerAgent
 
+
 class RulesAgent(BasePokerAgent):
     """Agent specializing in poker rules, hand rankings, and game mechanics"""
-    
+
     def __init__(self, llm_config: Dict[str, Any]):
         system_message = """
 You are the Rules and Mechanics Expert for No Limit Texas Hold'em poker.
@@ -43,106 +44,112 @@ When analyzing a situation, always ensure:
 3. Hand rankings are correctly identified
 4. Game flow follows proper sequence
         """
-        
+
         super().__init__(
             name="RulesAgent",
             system_message=system_message,
             specialty="Rules and Game Mechanics",
-            llm_config=llm_config
+            llm_config=llm_config,
         )
-    
+
     def validate_action(self, action: str, situation: Dict[str, Any]) -> Dict[str, Any]:
         """Validate if a proposed action is legal"""
-        validation = {
-            "is_valid": True,
-            "issues": [],
-            "corrected_action": action
-        }
-        
-        bet_to_call = situation.get('bet_to_call', 0)
-        stack_size = situation.get('stack_size', 0)
-        
-        if action.lower().startswith('raise'):
+        validation = {"is_valid": True, "issues": [], "corrected_action": action}
+
+        bet_to_call = situation.get("bet_to_call", 0)
+        stack_size = situation.get("stack_size", 0)
+
+        if action.lower().startswith("raise"):
             try:
                 # Extract raise amount
-                raise_amount = float(action.split()[-1]) if len(action.split()) > 1 else 0
-                
+                raise_amount = (
+                    float(action.split()[-1]) if len(action.split()) > 1 else 0
+                )
+
                 if raise_amount < bet_to_call * 2:  # Minimum raise rule
                     validation["is_valid"] = False
-                    validation["issues"].append(f"Minimum raise is {bet_to_call * 2}, you proposed {raise_amount}")
+                    validation["issues"].append(
+                        f"Minimum raise is {bet_to_call * 2}, you proposed {raise_amount}"
+                    )
                     validation["corrected_action"] = f"raise {bet_to_call * 2}"
-                
+
                 if raise_amount > stack_size:
                     validation["is_valid"] = False
-                    validation["issues"].append("Cannot raise more than your stack size")
+                    validation["issues"].append(
+                        "Cannot raise more than your stack size"
+                    )
                     validation["corrected_action"] = "all-in"
-                    
+
             except ValueError:
                 validation["is_valid"] = False
                 validation["issues"].append("Invalid raise format")
-        
+
         return validation
-    
-    def evaluate_hand_strength(self, hole_cards: str, board: str = "") -> Dict[str, Any]:
+
+    def evaluate_hand_strength(
+        self, hole_cards: str, board: str = ""
+    ) -> Dict[str, Any]:
         """Evaluate the strength of a poker hand"""
         # This is a simplified version - would use proper hand evaluator in real implementation
         evaluation = {
             "hand_type": "High Card",
             "strength": 1,  # 1-10 scale
-            "description": "Hand strength evaluation"
+            "description": "Hand strength evaluation",
         }
-        
+
         # Basic pocket pair detection
         if hole_cards and len(hole_cards.split()) == 2:
             card1, card2 = hole_cards.split()
             if card1[0] == card2[0]:  # Same rank
                 evaluation["hand_type"] = "Pocket Pair"
                 evaluation["strength"] = 5
-                
+
                 # Premium pairs
-                if card1[0] in ['A', 'K', 'Q']:
+                if card1[0] in ["A", "K", "Q"]:
                     evaluation["strength"] = 9
                     evaluation["description"] = f"Premium pocket pair ({card1[0]}s)"
-                elif card1[0] in ['J', '10', '9']:
+                elif card1[0] in ["J", "10", "9"]:
                     evaluation["strength"] = 7
                     evaluation["description"] = f"Strong pocket pair ({card1[0]}s)"
                 else:
                     evaluation["description"] = f"Pocket pair ({card1[0]}s)"
-        
+
         return evaluation
-    
+
     def get_recommendation(self, situation: Dict[str, Any]) -> Dict[str, Any]:
         """Get rules-based recommendation"""
         context = self.format_poker_context(situation)
-        
+
         # Validate current situation
         validation_issues = []
-        
+
         # Check for common rule violations
-        if situation.get('bet_to_call', 0) > situation.get('stack_size', 0):
-            validation_issues.append("Bet to call exceeds stack size - all-in situation")
-        
+        if situation.get("bet_to_call", 0) > situation.get("stack_size", 0):
+            validation_issues.append(
+                "Bet to call exceeds stack size - all-in situation"
+            )
+
         reasoning = f"From rules perspective:\n{context}"
         if validation_issues:
             reasoning += f"\nRule issues: {'; '.join(validation_issues)}"
-        
+
         recommendation = "Follow proper betting structure"
         confidence = 0.9
-        
+
         # Basic recommendations based on position and action
-        position = situation.get('position', '').lower()
-        if 'bb' in position and situation.get('bet_to_call', 0) == 0:
+        position = situation.get("position", "").lower()
+        if "bb" in position and situation.get("bet_to_call", 0) == 0:
             recommendation = "Option to check or bet (you're in big blind)"
-        elif situation.get('bet_to_call', 0) > 0:
+        elif situation.get("bet_to_call", 0) > 0:
             recommendation = "Must call, raise, or fold"
         else:
             recommendation = "Option to check or bet"
-        
+
         return {
             "agent": self.name,
             "specialty": self.specialty,
             "recommendation": recommendation,
             "confidence": confidence,
             "reasoning": reasoning,
-            "validation_issues": validation_issues
+            "validation_issues": validation_issues,
         }
