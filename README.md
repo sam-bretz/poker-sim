@@ -6,6 +6,8 @@ Interactive poker simulator with AI agents powered by AG2/AutoGen framework for 
 
 This is an **interactive poker simulator** that provides strategic advice through specialized AI agents. It creates a command-line poker game where you can deal hands, make decisions, and get real-time strategy recommendations from four different AI poker experts working together.
 
+![Poker Table Visualization](visualization/screenshots/display.png)
+
 ## Task-Based Quick Start
 
 ### 🚀 Setup Tasks
@@ -51,53 +53,6 @@ Deal Hand → Get Agent Advice → Make Decision → See Results → Repeat
 - **ChromaDB**: Vector database storing poker strategies and hand analyses
 - **Contextual Advice**: Agents reference actual poker content for recommendations
 
-## Task-Based Workflow
-
-### Task 1: System Initialization
-```bash
-# Check agent setup status
-agents
-
-# Expected output if setup needed:
-# ❌ Agents: Not initialized - AG2/AutoGen required
-# 📋 Requirements for real agents:
-#    • AG2/AutoGen installed: pip install ag2
-#    • Ollama running on localhost:11434
-#    • llama3.2:latest model downloaded
-```
-
-### Task 2: Deal Your First Hand
-```bash
-# Start a poker session
-new
-
-# Expected output if agents working:
-# 📊 HAND #1
-# Position: BTN, Hole Cards: Ah Ks
-# 🤖 AGENT RECOMMENDATIONS:
-# [Multi-agent analysis and recommendations]
-```
-
-### Task 3: Get Strategic Advice
-```bash
-# Ask agents to discuss strategy
-discuss "Should I bet for value or check?"
-
-# Expected output:
-# 💬 MULTI-AGENT DISCUSSION:
-# [Real-time conversation between agents]
-# [Consensus recommendation with reasoning]
-```
-
-### Task 4: Make Decisions
-```bash
-# Take poker actions based on advice
-raise 25    # or fold, call, check
-bet 10      # specify bet amounts
-
-# System simulates outcomes and updates stack
-```
-
 ## Command Reference
 
 ### 🎮 Game Commands
@@ -124,37 +79,6 @@ help             # Show all commands
 quit             # Exit simulator
 ```
 
-## Development Tasks
-
-### 📚 Task-Based Learning Path
-
-#### Task Set 1: Quick Start (10 minutes)
-- [ ] **Task**: Read this README.md for project overview
-- [ ] **Task**: Install dependencies from `requirements.txt`
-- [ ] **Task**: Run `python3 interactive_poker_simulator.py`
-- [ ] **Task**: Use `agents` command to check setup status
-
-#### Task Set 2: Understanding Agents (20 minutes)
-- [ ] **Task**: Read `agents/base_agent.py` for agent framework
-- [ ] **Task**: Study `agents/math_agent.py` for specialist example
-- [ ] **Task**: Compare different agent approaches in other agent files
-- [ ] **Task**: Run `discuss "test question"` to see agent interactions
-
-#### Task Set 3: Game Mechanics (15 minutes)
-- [ ] **Task**: Explore `game/poker_engine.py` for hand generation
-- [ ] **Task**: Use `new` command multiple times to see different scenarios
-- [ ] **Task**: Test `fold`, `call`, `raise` actions to see outcomes
-
-#### Task Set 4: Knowledge System (20 minutes)
-- [ ] **Task**: Examine `knowledge/knowledge_base.py` for RAG implementation
-- [ ] **Task**: Check `knowledge/wph_scraper.py` for data collection
-- [ ] **Task**: Review scraped data files in `/data` directory
-
-#### Task Set 5: Visualization (10 minutes)
-- [ ] **Task**: Study `visualization/table_view.py` for poker table graphics
-- [ ] **Task**: Deal hands and observe the visual table updates
-
-![Poker Table Visualization](visualization/screenshots/display.png)
 
 ### 🔍 Key Code Patterns
 
