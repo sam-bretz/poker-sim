@@ -57,6 +57,11 @@ class InteractivePokerSimulator:
         # Initialize components
         self.setup_knowledge_base()
         self.setup_agents()
+    
+    def is_termination_msg(self, message):
+        """Check if message contains a final recommendation to terminate discussion"""
+        content = str(message.get("content", "")).lower()
+        return any(word in content for word in ["fold", "call", "raise", "consensus", "final recommendation"])
 
     def setup_knowledge_base(self):
         """Initialize the knowledge base"""
@@ -85,6 +90,10 @@ class InteractivePokerSimulator:
             
         print("\n🤖 Setting up AI agents...")
         try:
+            # Configure logging for better visibility of agent conversations
+            import logging
+            logging.basicConfig(level=logging.INFO)
+            
             # Configure Ollama
             llm_config = {
                 "config_list": [
@@ -111,9 +120,9 @@ class InteractivePokerSimulator:
             group_chat = GroupChat(  # type: ignore
                 agents=self.agents,
                 messages=[],
-                max_round=4,  # Short focused discussions
-                speaker_selection_method="auto", 
-                allow_repeat_speaker=True,  # Allow follow-up for consensus
+                max_round=8,  # Allow enough rounds for all agents to speak
+                speaker_selection_method="round_robin",  # Force rotation through all agents
+                allow_repeat_speaker=False,  # Ensure all agents get to speak first
             )
 
             self.chat_manager = GroupChatManager(  # type: ignore
@@ -377,36 +386,70 @@ HAND PROGRESSION HISTORY:"""
 QUESTION: {question}
 
 DISCUSSION INSTRUCTIONS:
-1. ONLY discuss the provided hand situation above - do not invent new scenarios
-2. Each agent should provide their specialized analysis of the current decision
-3. Work together to reach a FINAL CONSENSUS RECOMMENDATION  
-4. End with a clear action: FOLD, CALL, or RAISE (with amount)
-5. Keep responses concise and focused on the question
+RulesAgent: Start by validating the legal actions and analyzing hand strength.
+MathAgent: Calculate pot odds, equity, and expected value for different actions.
+PositionAgent: Analyze positional advantages and opponent range considerations.
+JonathanAgent: Apply tournament strategy principles and provide final recommendation.
 
-IMPORTANT: Stay focused on the provided hand details and question. Do not create new hands or scenarios.
+Each agent MUST provide specific analysis. Do not ask others to start - analyze the hand immediately.
+End with clear consensus: FOLD, CALL, or RAISE (with specific amount).
+
+IMPORTANT: Give concrete poker analysis, not meta-discussion about the format.
 """
 
         try:
             print("🤖 Initiating MultiAgent Discussion...")
+            print("=" * 60)
+            
+            # Force output flushing to ensure visibility
+            import sys
+            sys.stdout.flush()
+            
+            # Enable verbose mode for AG2 to show conversation details
+            import os
+            os.environ["AUTOGEN_USE_DOCKER"] = "False"  # Ensure no Docker interference
+            
+            print("🔄 Starting agent conversation (this may take 30-60 seconds)...")
+            print("🔄 Agents are thinking and discussing...")
+            print("🔄 Note: AG2 conversation may not show in real-time due to buffering")
+            print("🔄 Please wait for completion message...")
+            sys.stdout.flush()
             
             # Start group discussion using the GroupChatManager
             chat_result = self.agents[0].initiate_chat(
                 recipient=self.chat_manager,
                 message=context,
-                max_turns=6,  # Shorter discussion to force quick consensus  
+                max_turns=12,  # Allow enough turns for all agents to contribute
+                is_termination_msg=self.is_termination_msg,  # Stop when recommendation is given  
                 silent=False   # Show the conversation
             )
+            
+            print("🏁 Discussion completed!")
+            print("=" * 60)
+            sys.stdout.flush()
+            
+            # Debug: Check what we got back
+            print(f"🔍 DEBUG - Chat result type: {type(chat_result)}")
+            print(f"🔍 DEBUG - Has chat_history: {hasattr(chat_result, 'chat_history')}")
+            if hasattr(chat_result, 'chat_history'):
+                print(f"🔍 DEBUG - Chat history length: {len(chat_result.chat_history) if chat_result.chat_history else 0}")
             
             # Extract the conversation
             if hasattr(chat_result, 'chat_history') and chat_result.chat_history:
                 conversation = []
-                for msg in chat_result.chat_history:
+                print("🔍 DEBUG - Processing chat history...")
+                for i, msg in enumerate(chat_result.chat_history):
+                    print(f"🔍 DEBUG - Message {i}: type={type(msg)}")
                     if hasattr(msg, 'content') and hasattr(msg, 'name'):
                         conversation.append(f"**{msg.name}**: {msg.content}")
+                        print(f"🔍 DEBUG - Added via attr: {msg.name}: {msg.content[:50]}...")
                     elif isinstance(msg, dict):
                         agent_name = msg.get('name', msg.get('role', 'Agent'))
                         content = msg.get('content', str(msg))
                         conversation.append(f"**{agent_name}**: {content}")
+                        print(f"🔍 DEBUG - Added via dict: {agent_name}: {content[:50]}...")
+                    else:
+                        print(f"🔍 DEBUG - Unknown message format: {str(msg)[:100]}")
                 
                 if conversation:
                     result = "💬 MULTI-AGENT DISCUSSION:\n"
@@ -819,8 +862,27 @@ IMPORTANT: Stay focused on the provided hand details and question. Do not create
                 f"Hand {hand['hand_number']}: {hand['action']} → {hand['outcome']} {result_symbol} (${hand['stack_change']:+.2f})"
             )
 
+    def _reset_terminal(self):
+        """Reset terminal to canonical input mode"""
+        try:
+            import termios
+            import sys
+            # Reset terminal to canonical mode (line buffered input)
+            termios.tcflush(sys.stdin, termios.TCIOFLUSH)
+        except (ImportError, OSError):
+            # Not on Unix or termios not available, use alternative approach
+            try:
+                import sys
+                if hasattr(sys.stdin, 'flush'):
+                    sys.stdin.flush()
+            except:
+                pass  # Best effort only
+
     def main_loop(self):
         """Main interactive loop"""
+        # Reset terminal input mode to prevent character-by-character input
+        self._reset_terminal()
+        
         print("🎰 INTERACTIVE POKER SIMULATOR")
         print("=" * 60)
         print("Commands:")
@@ -838,7 +900,24 @@ IMPORTANT: Stay focused on the provided hand details and question. Do not create
 
         while True:
             try:
-                command = input("\n🎯 Enter command: ").strip().lower()
+                # Ensure stdin is in canonical mode and flush output
+                import sys
+                sys.stdout.flush()
+                sys.stderr.flush()
+                
+                # Get input with better error handling
+                try:
+                    command = input("\n🎯 Enter command: ").strip().lower()
+                except EOFError:
+                    print("\n👋 EOF detected, exiting...")
+                    break
+                except KeyboardInterrupt:
+                    print("\n👋 Keyboard interrupt, exiting...")
+                    break
+                
+                # Skip empty commands
+                if not command:
+                    continue
 
                 if command in ["quit", "q", "exit"]:
                     print("\n👋 Thanks for playing!")
@@ -921,8 +1000,17 @@ IMPORTANT: Stay focused on the provided hand details and question. Do not create
             except KeyboardInterrupt:
                 print("\n👋 Exiting simulator...")
                 break
+            except EOFError:
+                print("\n👋 EOF detected, exiting...")
+                break  
             except Exception as e:
-                print(f"❌ Error: {e}")
+                # Only show errors for actual command processing, not input issues
+                if str(e) and len(str(e)) > 1:  # Avoid single character errors
+                    print(f"❌ Command error: {e}")
+                    print("💡 Type 'help' for available commands")
+                else:
+                    # Likely an input handling issue, just continue
+                    continue
 
 
 if __name__ == "__main__":
