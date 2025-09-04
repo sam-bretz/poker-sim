@@ -609,17 +609,20 @@ IMPORTANT: Stay focused on the provided hand details and question. Do not create
         for i in range(current_index + 1, len(street_order)):
             streets_to_play.append(street_order[i])
         
-        # Generate board cards for remaining streets
+        # Generate board cards for remaining streets based on current state
         all_cards = []
         if not board_cards:  # Starting preflop
-            all_cards = self.generate_board()  # This will be flop+turn+river
-            board_cards = all_cards[:3]  # Flop
-        elif len(board_cards) == 3:  # Currently on flop
-            all_cards = board_cards + self.generate_board()[3:5]  # Add turn+river
-        elif len(board_cards) == 4:  # Currently on turn
-            all_cards = board_cards + [self.generate_board()[4]]  # Add river
+            # Generate a progressive board (we'll add cards as streets progress)
+            all_cards = self.generate_board()  # This could be 3, 4, or 5 cards
         else:
-            all_cards = board_cards
+            # Use existing board cards and generate additional ones if needed
+            all_cards = board_cards.copy()
+            # Add cards as needed for progression
+            needed_cards = 5 - len(all_cards)
+            if needed_cards > 0:
+                additional_cards = self.generate_board()
+                # Take only the cards we need
+                all_cards.extend(additional_cards[:needed_cards])
         
         # Simulate each street
         for i, next_street in enumerate(streets_to_play):
@@ -632,20 +635,28 @@ IMPORTANT: Stay focused on the provided hand details and question. Do not create
                 print(street_msg)
                 
             elif next_street == "turn" and len(board_cards) == 3:
-                board_cards = all_cards[:4]
-                turn_card = all_cards[3]
-                current_pot += random.uniform(5, 15)  # Betting action
-                street_msg = f"🃏 TURN: {turn_card} (pot: ${current_pot:.0f})"
-                progression.append(street_msg)
-                print(street_msg)
+                if len(all_cards) > 3:  # Only proceed if we have a turn card
+                    board_cards = all_cards[:4]
+                    turn_card = all_cards[3]
+                    current_pot += random.uniform(5, 15)  # Betting action
+                    street_msg = f"🃏 TURN: {turn_card} (pot: ${current_pot:.0f})"
+                    progression.append(street_msg)
+                    print(street_msg)
+                else:
+                    # Skip turn if no turn card available
+                    print("⏩ Turn skipped - no turn card available")
                 
             elif next_street == "river" and len(board_cards) == 4:
-                board_cards = all_cards[:5]
-                river_card = all_cards[4]
-                current_pot += random.uniform(10, 25)  # Final betting
-                street_msg = f"🃏 RIVER: {river_card} (pot: ${current_pot:.0f})"
-                progression.append(street_msg)
-                print(street_msg)
+                if len(all_cards) > 4:  # Only proceed if we have a river card
+                    board_cards = all_cards[:5]
+                    river_card = all_cards[4]
+                    current_pot += random.uniform(10, 25)  # Final betting
+                    street_msg = f"🃏 RIVER: {river_card} (pot: ${current_pot:.0f})"
+                    progression.append(street_msg)
+                    print(street_msg)
+                else:
+                    # Skip river if no river card available
+                    print("⏩ River skipped - no river card available")
                 
                 # Update hand strength with complete board
                 hand_strength = self.evaluate_hand_strength(hero_cards, board_cards)

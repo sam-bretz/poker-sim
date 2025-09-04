@@ -154,6 +154,8 @@ quit             # Exit simulator
 - [ ] **Task**: Study `visualization/table_view.py` for poker table graphics
 - [ ] **Task**: Deal hands and observe the visual table updates
 
+![Poker Table Visualization](visualization/screenshots/display.png)
+
 ### 🔍 Key Code Patterns
 
 #### Agent Pattern
