@@ -14,7 +14,7 @@ This is an **interactive poker simulator** that provides strategic advice throug
 # Task 1: Install dependencies
 pip install -r requirements.txt
 
-# Task 2: Install AG2 framework  
+# Task 2: Install AG2 framework
 pip install ag2
 
 # Task 3: Start Ollama (local AI)
@@ -29,7 +29,7 @@ python3 interactive_poker_simulator.py
 
 Once running, use these commands:
 - `agents` - Check agent status and setup diagnostics
-- `new` - Deal a new poker hand 
+- `new` - Deal a new poker hand
 - `discuss "question"` - Start multi-agent discussion
 - `help` - View all available commands
 
@@ -103,14 +103,14 @@ bet 10      # specify bet amounts
 ### 🎮 Game Commands
 ```bash
 new              # Deal new hand
-fold             # Fold current hand  
+fold             # Fold current hand
 call             # Call the bet
 check            # Check (no bet)
 bet 25           # Bet $25
 raise 50         # Raise to $50
 ```
 
-### 🤖 Agent Commands  
+### 🤖 Agent Commands
 ```bash
 discuss "question"    # Start multi-agent discussion
 agents               # Check agent status and diagnostics
@@ -130,7 +130,7 @@ quit             # Exit simulator
 
 #### Task Set 1: Quick Start (10 minutes)
 - [ ] **Task**: Read this README.md for project overview
-- [ ] **Task**: Install dependencies from `requirements.txt`  
+- [ ] **Task**: Install dependencies from `requirements.txt`
 - [ ] **Task**: Run `python3 interactive_poker_simulator.py`
 - [ ] **Task**: Use `agents` command to check setup status
 
@@ -140,7 +140,7 @@ quit             # Exit simulator
 - [ ] **Task**: Compare different agent approaches in other agent files
 - [ ] **Task**: Run `discuss "test question"` to see agent interactions
 
-#### Task Set 3: Game Mechanics (15 minutes)  
+#### Task Set 3: Game Mechanics (15 minutes)
 - [ ] **Task**: Explore `game/poker_engine.py` for hand generation
 - [ ] **Task**: Use `new` command multiple times to see different scenarios
 - [ ] **Task**: Test `fold`, `call`, `raise` actions to see outcomes
@@ -163,7 +163,7 @@ quit             # Exit simulator
 class SpecialistAgent(BaseAgent):
     def __init__(self, llm_config):
         self.specialty = "specific domain"
-    
+
     def get_recommendation(self, game_state):
         # Analyze situation
         # Return structured advice
@@ -178,14 +178,6 @@ chat_result = self.agents[0].initiate_chat(
     max_turns=8,
     silent=False
 )
-```
-
-#### Task-Oriented Error Handling
-```python
-try:
-    result = complex_operation()
-except Exception as e:
-    return f"❌ Operation failed: {e}\nUse 'agents' command for diagnostics."
 ```
 
 ## Project Structure
@@ -221,96 +213,3 @@ poker-assistant-ag2/
 - **BeautifulSoup**: Web scraping for training content
 - **Sentence Transformers**: Text embeddings for RAG
 
-## Example Task Workflow
-
-### Task: Complete a Full Poker Session
-
-```bash
-# Step 1: Check system status
-🎯 Enter command: agents
-✅ Agents: 4 agents active
-✅ MultiAgent Discussion: Available
-
-# Step 2: Deal first hand
-🎯 Enter command: new
-📊 HAND #1
-Position: BTN (Button)
-Hole Cards: Ac Kd, Pot: $12, Bet to Call: $5
-
-# Step 3: Get strategic advice
-🎯 Enter command: discuss "Should I raise for value?"
-💬 MULTI-AGENT DISCUSSION:
-**MathAgent**: Excellent pot odds at 29%, clear value raise
-**PositionAgent**: Button position perfect for aggression
-**JonathanAgent**: WPH patterns suggest 3x raise sizing
-**RulesAgent**: All actions legal, raise recommended
-🎯 CONSENSUS: RAISE to $15
-
-# Step 4: Execute decision
-🎯 Enter command: raise 15
-🎲 RESULT: WIN - Stack Change: +$27
-
-# Step 5: Review session
-🎯 Enter command: stats
-📊 SESSION STATS: 1 hand, 100% win rate, +$27 profit
-```
-
-## Key Features
-
-- **Real Multi-Agent Discussions**: GroupChatManager orchestrates agent conversations
-- **Task-Oriented Commands**: Clear actions with immediate feedback  
-- **Session Tracking**: Comprehensive statistics and hand history
-- **Diagnostic Tools**: Built-in troubleshooting with `agents` command
-- **Interactive Learning**: Learn poker strategy through agent discussions
-
-## Developer Onboarding Tasks
-
-### 🎯 New Developer Checklist
-
-#### First 10 Minutes
-- [ ] **Task**: Clone repository and read this README
-- [ ] **Task**: Install all dependencies (`pip install -r requirements.txt` + `pip install ag2`)
-- [ ] **Task**: Start Ollama service and pull model
-- [ ] **Task**: Run simulator and use `agents` command to verify setup
-
-#### Understanding the System (30 minutes)
-- [ ] **Task**: Deal multiple hands with `new` command to see variety
-- [ ] **Task**: Try `discuss` command with different questions
-- [ ] **Task**: Review agent conversation logs to understand multi-agent patterns
-- [ ] **Task**: Examine `agents/` directory to understand specialization
-
-#### Making Your First Change (20 minutes)
-- [ ] **Task**: Modify an agent's system message in `agents/base_agent.py`
-- [ ] **Task**: Test the change using `discuss` command
-- [ ] **Task**: Add a new command to the simulator's main loop
-- [ ] **Task**: Commit your changes and verify tests still pass
-
-### Common Setup Issues & Tasks
-
-#### Task: Fix AG2/AutoGen Issues
-```bash
-# If you see "No module named 'autogen'"
-pip install ag2
-
-# If agents fail to initialize
-agents  # Use diagnostic command
-```
-
-#### Task: Fix Ollama Connection
-```bash
-# If you see connection errors
-ollama serve  # Start Ollama service
-ollama pull llama3.2:latest  # Ensure model exists
-```
-
-#### Task: Verify Multi-Agent Discussions
-```bash
-# Test real agent conversations
-new
-discuss "Should I bet?"
-# Should see actual agent discussions, not error messages
-```
-
----
-
-*Built to demonstrate AG2 multi-agent systems in a practical, visual application with real-world poker strategy integration.*
