@@ -91,4 +91,21 @@ Your responses should be professional and focused on helping the human make bett
         if "bet_to_call" in situation:
             context_parts.append(f"Bet to Call: {situation['bet_to_call']}")
 
+        # Add hand progression history if available
+        if "hand_history" in situation and situation["hand_history"]:
+            context_parts.append("\nHAND PROGRESSION HISTORY:")
+            history = situation["hand_history"]
+            for i, state in enumerate(history[:-1], 1):  # Exclude current state
+                street = state.get('street', 'unknown').upper()
+                action = state.get('action', 'No action recorded')
+                pot = state.get('pot_size', 0)
+                bet = state.get('bet_to_call', 0)
+                board = state.get('board', '')
+                
+                context_parts.append(f"{i}. {street}: {action}")
+                if board:
+                    context_parts.append(f"   Board: {board} | Pot: ${pot:.1f} | Bet: ${bet:.1f}")
+                else:
+                    context_parts.append(f"   Pot: ${pot:.1f} | Bet: ${bet:.1f}")
+
         return "\n".join(context_parts)

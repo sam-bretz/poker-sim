@@ -111,9 +111,9 @@ class InteractivePokerSimulator:
             group_chat = GroupChat(  # type: ignore
                 agents=self.agents,
                 messages=[],
-                max_round=6,  # Shorter for interactive use
-                speaker_selection_method="auto",
-                allow_repeat_speaker=False,
+                max_round=4,  # Short focused discussions
+                speaker_selection_method="auto", 
+                allow_repeat_speaker=True,  # Allow follow-up for consensus
             )
 
             self.chat_manager = GroupChatManager(  # type: ignore
@@ -208,46 +208,90 @@ class InteractivePokerSimulator:
             "stack_size": final_state["stack_size"],
             "pot_size": 3.0,  # Blinds
             "bet_to_call": 2.0,  # Big blind
-            "opponents": final_state["opponents"],
-            "action": "Preflop: Hero in SB with pocket 9s, faced with limps and a raise"
+            "opponents": final_state["opponents"]
         }
+        
+        # Build realistic action descriptions based on hole cards
+        hole_cards = final_state.get("hole_cards", "")
+        position = final_state.get("position", "BTN")
         
         # If we have a board, build the progression
         if final_state.get("board"):
             board_cards = final_state["board"].split()
             
+            # Preflop action
+            if "9" in hole_cards:
+                preflop_state["action"] = f"Called from {position} with pocket 9s, 3 opponents see flop"
+            else:
+                preflop_state["action"] = f"Called from {position}, 3 opponents see flop"
+            
             # Flop
             if len(board_cards) >= 3:
+                flop_cards = " ".join(board_cards[:3])
                 flop_state = preflop_state.copy()
                 flop_state.update({
                     "street": "flop",
-                    "board": " ".join(board_cards[:3]),
+                    "board": flop_cards,
                     "pot_size": final_state["pot_size"] * 0.4,
-                    "bet_to_call": final_state["bet_to_call"] * 0.3,
-                    "action": "Flop: Hit bottom set! Opponent leads out"
+                    "bet_to_call": final_state["bet_to_call"] * 0.3
                 })
+                
+                # Determine flop action based on board texture
+                if "9" in flop_cards and "9" in hole_cards:
+                    flop_state["action"] = "Hit bottom set on flop! Called opponent's bet"
+                else:
+                    flop_state["action"] = "Checked, opponent bet, called"
+                
                 self.current_hand_history.append(flop_state)
             
             # Turn
             if len(board_cards) >= 4:
+                turn_cards = " ".join(board_cards[:4])
                 turn_state = flop_state.copy() if 'flop_state' in locals() else preflop_state.copy()
                 turn_state.update({
                     "street": "turn", 
-                    "board": " ".join(board_cards[:4]),
+                    "board": turn_cards,
                     "pot_size": final_state["pot_size"] * 0.7,
-                    "bet_to_call": final_state["bet_to_call"] * 0.6,
-                    "action": "Turn: Board pairs! Now have full house, opponent bets again"
+                    "bet_to_call": final_state["bet_to_call"] * 0.6
                 })
+                
+                # Check for paired board (full house potential)
+                board_ranks = [card[0] for card in board_cards[:4]]
+                if len(set(board_ranks)) < len(board_ranks):
+                    turn_state["action"] = "Turn pairs the board - now have full house! Opponent bets"
+                else:
+                    turn_state["action"] = "Turn card changes nothing, opponent bets again"
+                
                 self.current_hand_history.append(turn_state)
             
             # River (final state)
             if len(board_cards) == 5:
-                final_state["action"] = "River: Full house holds, facing final bet"
+                river_cards = " ".join(board_cards)
+                board_ranks = [card[0] for card in board_cards]
+                
+                # Check for full house potential
+                if "9" in hole_cards and board_ranks.count("9") >= 1:
+                    final_state["action"] = "River: Full house (9s full) - opponent makes large bet"
+                elif len(set(board_ranks)) < len(board_ranks):
+                    final_state["action"] = "River: Strong hand with paired board - opponent bets"
+                else:
+                    final_state["action"] = "River: Opponent makes final bet"
         else:
-            preflop_state["action"] = "Preflop decision with pocket pair"
+            preflop_state["action"] = f"Preflop decision from {position}"
             
-        self.current_hand_history.append(preflop_state)
-        self.current_hand_history.append(final_state)
+        # Add states in chronological order: preflop, flop, turn, river
+        history = [preflop_state]
+        
+        # Add intermediate states if they exist
+        if 'flop_state' in locals():
+            history.append(flop_state)
+        if 'turn_state' in locals():
+            history.append(turn_state)
+        
+        # Add final state
+        history.append(final_state)
+        
+        self.current_hand_history = history
         
         return final_state
 
@@ -258,11 +302,16 @@ class InteractivePokerSimulator:
         if not self.agents:
             raise Exception("No agents available. Agent recommendations require AG2/AutoGen setup.")
 
+        # Enhance game state with hand history for better agent context
+        enhanced_game_state = game_state.copy()
+        if self.current_hand_history:
+            enhanced_game_state["hand_history"] = self.current_hand_history
+
         # Get real agent recommendations
         recommendations = []
         for agent in self.agents:
             try:
-                rec = agent.get_recommendation(game_state)
+                rec = agent.get_recommendation(enhanced_game_state)
                 recommendations.append(rec)
             except Exception as e:
                 print(f"⚠️ Error from {agent.name}: {e}")
@@ -290,10 +339,11 @@ class InteractivePokerSimulator:
         if len(self.agents) == 0:
             return "❌ No agents initialized for discussion"
 
-        # Create context for multi-agent discussion
+        # Create context for multi-agent discussion with hand history
         context = f"""
 POKER HAND ANALYSIS REQUEST:
 
+CURRENT SITUATION:
 Position: {game_state.get('position', 'Unknown')}
 Hole Cards: {game_state.get('hole_cards', 'Unknown')}
 Board: {game_state.get('board', 'Preflop')}
@@ -303,9 +353,37 @@ Stack Size: ${game_state.get('stack_size', 0)}
 Bet to Call: ${game_state.get('bet_to_call', 0)}
 Opponents: {game_state.get('opponents', 1)}
 
+HAND PROGRESSION HISTORY:"""
+        
+        # Add hand history if available
+        if self.current_hand_history and len(self.current_hand_history) > 1:
+            context += "\n"
+            for i, state in enumerate(self.current_hand_history[:-1], 1):  # Exclude current state
+                street = state.get('street', 'unknown').upper()
+                action = state.get('action', 'No action recorded')
+                pot = state.get('pot_size', 0)
+                bet = state.get('bet_to_call', 0)
+                board = state.get('board', '')
+                
+                context += f"{i}. {street}: {action}\n"
+                if board:
+                    context += f"   Board: {board} | Pot: ${pot:.1f} | Bet: ${bet:.1f}\n"
+                else:
+                    context += f"   Pot: ${pot:.1f} | Bet: ${bet:.1f}\n"
+        else:
+            context += " No previous streets (preflop action)\n"
+        
+        context += f"""
 QUESTION: {question}
 
-Please discuss this poker situation. Each agent should provide your specialized analysis, then work together to reach a consensus recommendation. Keep responses concise but informative for interactive play.
+DISCUSSION INSTRUCTIONS:
+1. ONLY discuss the provided hand situation above - do not invent new scenarios
+2. Each agent should provide their specialized analysis of the current decision
+3. Work together to reach a FINAL CONSENSUS RECOMMENDATION  
+4. End with a clear action: FOLD, CALL, or RAISE (with amount)
+5. Keep responses concise and focused on the question
+
+IMPORTANT: Stay focused on the provided hand details and question. Do not create new hands or scenarios.
 """
 
         try:
@@ -315,7 +393,7 @@ Please discuss this poker situation. Each agent should provide your specialized 
             chat_result = self.agents[0].initiate_chat(
                 recipient=self.chat_manager,
                 message=context,
-                max_turns=8,  # Allow for back-and-forth discussion
+                max_turns=6,  # Shorter discussion to force quick consensus  
                 silent=False   # Show the conversation
             )
             
@@ -334,6 +412,13 @@ Please discuss this poker situation. Each agent should provide your specialized 
                     result = "💬 MULTI-AGENT DISCUSSION:\n"
                     result += "=" * 60 + "\n"
                     result += "\n".join(conversation)
+                    
+                    # Try to extract consensus/recommendation from the last few messages
+                    consensus = self._extract_consensus(conversation)
+                    if consensus:
+                        result += "\n" + "-" * 60 + "\n"
+                        result += f"🎯 CONSENSUS RECOMMENDATION: {consensus}"
+                    
                     result += "\n" + "=" * 60
                     return result
             
@@ -345,6 +430,37 @@ Please discuss this poker situation. Each agent should provide your specialized 
                 
         except Exception as e:
             return f"❌ MultiAgent discussion failed: {e}\nPlease check AG2/Ollama setup using 'agents' command."
+    
+    def _extract_consensus(self, conversation):
+        """Extract consensus recommendation from agent conversation"""
+        # Look for key phrases in the last few messages
+        search_text = " ".join(conversation[-3:]).lower()  # Last 3 messages
+        
+        # Look for consensus/recommendation keywords
+        if "consensus" in search_text or "recommend" in search_text:
+            # Extract action words
+            if "fold" in search_text:
+                return "FOLD - Agents agreed to fold"
+            elif "raise" in search_text and "$" in search_text:
+                # Try to extract raise amount
+                import re
+                amounts = re.findall(r'\$(\d+\.?\d*)', search_text)
+                if amounts:
+                    return f"RAISE to ${amounts[-1]} - Agents agreed to raise"
+                else:
+                    return "RAISE - Agents agreed to raise"
+            elif "call" in search_text:
+                return "CALL - Agents agreed to call"
+        
+        # Fallback: look for any action mentioned
+        if "call" in search_text:
+            return "CALL - Most recent agent suggestion"
+        elif "fold" in search_text:
+            return "FOLD - Most recent agent suggestion"
+        elif "raise" in search_text:
+            return "RAISE - Most recent agent suggestion"
+            
+        return None
 
     def display_hand(
         self, game_state: Dict[str, Any], recommendations: List[Dict[str, Any]]
@@ -355,22 +471,27 @@ Please discuss this poker situation. Each agent should provide your specialized 
         print("=" * 60)
 
         # Show hand progression history if available
-        if self.current_hand_history:
+        if self.current_hand_history and len(self.current_hand_history) > 1:
             print("📚 HAND PROGRESSION HISTORY:")
-            print("-" * 40)
-            for i, historical_state in enumerate(self.current_hand_history):
-                street = historical_state.get('street', 'unknown').upper()
-                action = historical_state.get('action', 'No action recorded')
-                pot = historical_state.get('pot_size', 0)
-                bet = historical_state.get('bet_to_call', 0)
-                board = historical_state.get('board', '')
+            print("-" * 50)
+            
+            street_emojis = {"preflop": "🃏", "flop": "🎯", "turn": "🔄", "river": "🎰"}
+            
+            for state in self.current_hand_history[:-1]:  # All except current
+                street = state.get('street', 'preflop')
+                emoji = street_emojis.get(street, "🃏")
+                action = state.get('action', f'{street.title()} action')
+                pot = state.get('pot_size', 0)
+                bet = state.get('bet_to_call', 0)
+                board = state.get('board', '')
                 
-                print(f"{i+1}. {street}: {action}")
+                print(f"{emoji} {street.upper()}: {action}")
                 if board:
-                    print(f"   Board: {board}")
-                print(f"   Pot: ${pot:.2f}, Bet to Call: ${bet:.2f}")
+                    print(f"   Board: {board} | Pot: ${pot:.1f} | Bet to Call: ${bet:.1f}")
+                else:
+                    print(f"   Pot: ${pot:.1f} | Bet to Call: ${bet:.1f}")
                 print()
-            print("-" * 40)
+            print("-" * 50)
 
         # Current game state info
         print(f"CURRENT STREET: {game_state.get('street', 'preflop').upper()}")
