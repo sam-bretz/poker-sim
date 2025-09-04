@@ -1,0 +1,313 @@
+"""
+Knowledge Base for Jonathan Little's poker strategies using ChromaDB.
+Implements RAG (Retrieval Augmented Generation) for poker strategy lookup.
+"""
+
+import chromadb
+from chromadb.utils import embedding_functions
+from typing import List, Dict, Any, Optional
+import json
+import os
+from dataclasses import asdict
+import logging
+from .wph_scraper import PokerHand, WPHScraper
+
+logger = logging.getLogger(__name__)
+
+class PokerKnowledgeBase:
+    """RAG knowledge base for poker strategies from WPH episodes"""
+    
+    def __init__(self, persist_directory: str = "./chroma_db"):
+        self.persist_directory = persist_directory
+        self.client = chromadb.PersistentClient(path=persist_directory)
+        
+        # Use OpenAI embeddings (or fallback to sentence transformers)
+        try:
+            self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+                api_key=os.getenv("OPENAI_API_KEY"),
+                model_name="text-embedding-3-small"
+            )
+        except:
+            # Fallback to sentence transformers
+            self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name="all-MiniLM-L6-v2"
+            )
+            logger.info("Using SentenceTransformer embeddings (OpenAI not available)")
+        
+        # Create collections
+        self.hands_collection = self._get_or_create_collection("poker_hands")
+        self.strategies_collection = self._get_or_create_collection("poker_strategies")
+    
+    def _get_or_create_collection(self, name: str):
+        """Get or create a ChromaDB collection"""
+        try:
+            return self.client.get_collection(name, embedding_function=self.embedding_function)
+        except:
+            return self.client.create_collection(name, embedding_function=self.embedding_function)
+    
+    def index_poker_hands(self, hands: List[PokerHand]):
+        """Index poker hands in the knowledge base"""
+        logger.info(f"Indexing {len(hands)} poker hands...")
+        
+        documents = []
+        metadatas = []
+        ids = []
+        
+        for hand in hands:
+            # Create comprehensive document text
+            doc_text = self._create_hand_document(hand)
+            documents.append(doc_text)
+            
+            # Create metadata
+            metadata = {
+                "episode": hand.episode_number,
+                "title": hand.title,
+                "url": hand.url,
+                "position": hand.position_info,
+                "stacks": hand.stack_sizes,
+                "pot": hand.pot_size,
+                "type": "hand_analysis"
+            }
+            metadatas.append(metadata)
+            
+            # Create ID
+            ids.append(f"hand_{hand.episode_number}")
+        
+        # Add to collection
+        self.hands_collection.add(
+            documents=documents,
+            metadatas=metadatas,
+            ids=ids
+        )
+        
+        logger.info(f"Successfully indexed {len(hands)} hands")
+    
+    def index_strategies(self, hands: List[PokerHand]):
+        """Index strategic insights separately for better retrieval"""
+        logger.info(f"Indexing strategic insights from {len(hands)} hands...")
+        
+        documents = []
+        metadatas = []
+        ids = []
+        
+        for hand in hands:
+            # Index key learnings
+            for i, learning in enumerate(hand.key_learnings):
+                if learning and len(learning.strip()) > 20:
+                    documents.append(learning)
+                    metadatas.append({
+                        "episode": hand.episode_number,
+                        "title": hand.title,
+                        "type": "key_learning",
+                        "context": hand.situation[:100]  # Brief context
+                    })
+                    ids.append(f"learning_{hand.episode_number}_{i}")
+            
+            # Index strategic analysis
+            if hand.strategic_analysis and len(hand.strategic_analysis.strip()) > 50:
+                documents.append(hand.strategic_analysis)
+                metadatas.append({
+                    "episode": hand.episode_number,
+                    "title": hand.title,
+                    "type": "strategic_analysis",
+                    "position": hand.position_info,
+                    "stacks": hand.stack_sizes
+                })
+                ids.append(f"analysis_{hand.episode_number}")
+        
+        # Add to strategies collection
+        if documents:
+            self.strategies_collection.add(
+                documents=documents,
+                metadatas=metadatas,
+                ids=ids
+            )
+            logger.info(f"Successfully indexed {len(documents)} strategic insights")
+    
+    def _create_hand_document(self, hand: PokerHand) -> str:
+        """Create a comprehensive document from a poker hand"""
+        doc_parts = [
+            f"Episode {hand.episode_number}: {hand.title}",
+            f"Situation: {hand.situation}",
+            f"Position: {hand.position_info}",
+            f"Stack Sizes: {hand.stack_sizes}",
+            f"Pot Size: {hand.pot_size}",
+            "",
+            "Action Sequence:",
+        ]
+        
+        for i, action in enumerate(hand.action_sequence):
+            doc_parts.append(f"  {i+1}. {action}")
+        
+        doc_parts.extend([
+            "",
+            "Strategic Analysis:",
+            hand.strategic_analysis,
+            "",
+            "Key Learnings:"
+        ])
+        
+        for learning in hand.key_learnings:
+            doc_parts.append(f"  - {learning}")
+        
+        return "\n".join(doc_parts)
+    
+    def search_similar_hands(self, query: str, n_results: int = 5) -> List[Dict[str, Any]]:
+        """Search for similar poker hands based on query"""
+        try:
+            results = self.hands_collection.query(
+                query_texts=[query],
+                n_results=n_results
+            )
+            
+            formatted_results = []
+            if results['documents'] and results['documents'][0]:
+                for i, doc in enumerate(results['documents'][0]):
+                    result = {
+                        'content': doc,
+                        'metadata': results['metadatas'][0][i] if results['metadatas'] else {},
+                        'distance': results['distances'][0][i] if results['distances'] else 0
+                    }
+                    formatted_results.append(result)
+            
+            return formatted_results
+            
+        except Exception as e:
+            logger.error(f"Error searching hands: {e}")
+            return []
+    
+    def search_strategies(self, query: str, n_results: int = 10) -> List[Dict[str, Any]]:
+        """Search for strategic insights based on query"""
+        try:
+            results = self.strategies_collection.query(
+                query_texts=[query],
+                n_results=n_results
+            )
+            
+            formatted_results = []
+            if results['documents'] and results['documents'][0]:
+                for i, doc in enumerate(results['documents'][0]):
+                    result = {
+                        'content': doc,
+                        'metadata': results['metadatas'][0][i] if results['metadatas'] else {},
+                        'distance': results['distances'][0][i] if results['distances'] else 0
+                    }
+                    formatted_results.append(result)
+            
+            return formatted_results
+            
+        except Exception as e:
+            logger.error(f"Error searching strategies: {e}")
+            return []
+    
+    def get_context_for_situation(self, situation: str, position: str = "", 
+                                stacks: str = "", pot_odds: str = "") -> str:
+        """Get relevant context for a specific poker situation"""
+        
+        # Build query from situation components
+        query_parts = [situation]
+        if position:
+            query_parts.append(f"position {position}")
+        if stacks:
+            query_parts.append(f"stacks {stacks}")
+        if pot_odds:
+            query_parts.append(f"pot odds {pot_odds}")
+        
+        query = " ".join(query_parts)
+        
+        # Search both hands and strategies
+        hand_results = self.search_similar_hands(query, n_results=3)
+        strategy_results = self.search_strategies(query, n_results=5)
+        
+        # Build context string
+        context_parts = []
+        
+        if hand_results:
+            context_parts.append("=== Similar Hand Examples ===")
+            for i, result in enumerate(hand_results[:2]):  # Top 2 hands
+                context_parts.append(f"\nExample {i+1} (Episode {result['metadata'].get('episode', 'Unknown')}):")
+                context_parts.append(result['content'][:300] + "...")
+        
+        if strategy_results:
+            context_parts.append("\n\n=== Relevant Strategic Insights ===")
+            for i, result in enumerate(strategy_results[:3]):  # Top 3 strategies
+                episode = result['metadata'].get('episode', 'Unknown')
+                insight_type = result['metadata'].get('type', 'insight')
+                context_parts.append(f"\n{insight_type.replace('_', ' ').title()} (Episode {episode}):")
+                context_parts.append(result['content'])
+        
+        return "\n".join(context_parts)
+    
+    def load_and_index_from_file(self, json_file: str):
+        """Load hands from JSON file and index them"""
+        try:
+            with open(json_file, 'r', encoding='utf-8') as f:
+                hand_data = json.load(f)
+            
+            # Convert to PokerHand objects
+            hands = []
+            for data in hand_data:
+                hand = PokerHand(**data)
+                hands.append(hand)
+            
+            # Index both hands and strategies
+            self.index_poker_hands(hands)
+            self.index_strategies(hands)
+            
+            logger.info(f"Loaded and indexed {len(hands)} hands from {json_file}")
+            return hands
+            
+        except Exception as e:
+            logger.error(f"Error loading from file {json_file}: {e}")
+            return []
+    
+    def setup_knowledge_base(self, start_episode: int = 1, end_episode: int = 100, 
+                           force_refresh: bool = False):
+        """Complete setup of the knowledge base"""
+        
+        json_file = f"wph_episodes_{start_episode}_{end_episode}.json"
+        
+        # Check if we already have the data
+        if os.path.exists(json_file) and not force_refresh:
+            logger.info(f"Loading existing data from {json_file}")
+            return self.load_and_index_from_file(json_file)
+        
+        # Scrape fresh data
+        logger.info(f"Scraping episodes {start_episode} to {end_episode}...")
+        scraper = WPHScraper()
+        hands = scraper.scrape_episodes(start_episode, end_episode)
+        
+        # Save scraped data
+        scraper.save_to_json(hands, json_file)
+        
+        # Index the data
+        if hands:
+            self.index_poker_hands(hands)
+            self.index_strategies(hands)
+        
+        return hands
+    
+    def get_collection_stats(self) -> Dict[str, Any]:
+        """Get statistics about the knowledge base"""
+        try:
+            hands_count = self.hands_collection.count()
+            strategies_count = self.strategies_collection.count()
+            
+            return {
+                "hands_indexed": hands_count,
+                "strategies_indexed": strategies_count,
+                "total_documents": hands_count + strategies_count
+            }
+        except:
+            return {"error": "Could not retrieve stats"}
+
+if __name__ == "__main__":
+    # Test the knowledge base
+    kb = PokerKnowledgeBase()
+    
+    # Test search
+    results = kb.search_strategies("pocket kings preflop raise")
+    print(f"Found {len(results)} relevant strategies")
+    
+    for i, result in enumerate(results[:3]):
+        print(f"\n{i+1}. Episode {result['metadata'].get('episode')}: {result['content'][:100]}...")
